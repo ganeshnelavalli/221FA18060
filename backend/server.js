@@ -21,17 +21,35 @@ function generateShortId(length = 5) {
 }
 
 app.post('/shorten', (req, res) => {
-	const { longUrl } = req.body;
+	const { longUrl, validity, customCode } = req.body;
 	if (!longUrl || !longUrl.startsWith('http')) {                                                           
 		return res.status(400).json({ error: 'Invalid URL' });
 	}
-	for (const [shortId, data] of Object.entries(urlDatabase)) {
-		if (data.longUrl === longUrl && (!data.expiresAt || data.expiresAt > Date.now())) {
-			return res.json({ shortUrl: baseUrl + shortId, expiresAt: data.expiresAt, accessCount: data.accessCount || 0 });
+	let shortId;
+	if (customCode) {
+		if (!/^[a-zA-Z0-9]{3,20}$/.test(customCode)) {
+			return res.status(400).json({ error: 'Invalid shortcode. Use 3-20 alphanumeric characters.' });
+		}
+		if (urlDatabase[customCode]) {
+			return res.status(400).json({ error: 'Shortcode already in use.' });
+		}
+		shortId = customCode;
+	} else {
+		for (const [id, data] of Object.entries(urlDatabase)) {
+			if (data.longUrl === longUrl && (!data.expiresAt || data.expiresAt > Date.now())) {
+				return res.json({ shortUrl: baseUrl + id, expiresAt: data.expiresAt, accessCount: data.accessCount || 0 });
+			}
+		}
+		shortId = generateShortId();
+		while (urlDatabase[shortId]) {
+			shortId = generateShortId();
 		}
 	}
-	const shortId = generateShortId();
-	const expiresAt = Date.now() + EXPIRY_MINUTES * 60 * 1000;
+	let expiryMinutes = EXPIRY_MINUTES;
+	if (validity && !isNaN(validity) && validity > 0) {
+		expiryMinutes = parseInt(validity, 10);
+	}
+	const expiresAt = Date.now() + expiryMinutes * 60 * 1000;
 	urlDatabase[shortId] = { longUrl, expiresAt, accessCount: 0 };
 	res.json({ shortUrl: baseUrl + shortId, expiresAt, accessCount: 0 });
 });
